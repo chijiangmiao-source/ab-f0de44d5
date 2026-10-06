@@ -1,0 +1,34 @@
+services:
+  # 操作员可见的授权族轮换服务（页面 + API + 健康检查）。
+  app:
+    build: .
+    image: deepspace-ground-auth:latest
+    ports:
+      # 可配置宿主机端口：HOST_PORT=9090 docker compose up -d
+      - "${HOST_PORT:-8080}:8080"
+    environment:
+      # 置 1 启用“提交后断回应”故障注入（每个进程首次轮换时触发一次，
+      # 重启后再次装填），用于演练断回应后的幂等恢复。
+      RESPONSE_FAULT: "${RESPONSE_FAULT:-0}"
+      DB_PATH: /data/groundstation.db
+    volumes:
+      - auth-data:/data
+    restart: unless-stopped
+
+  # 验收服务：围绕断回应恢复、并发同标识、异标识重放完成代码测试与
+  # 页面可观察结果校验，构建应用并对运行中的 app 执行 API/HTTP 冒烟，
+  # 结束即退出，并以退出码报告验收结果（0 通过 / 非 0 失败）。
+  # 运行：docker compose --profile verify run --rm verify
+  verify:
+    profiles: ["verify"]
+    build: .
+    image: deepspace-ground-auth:latest
+    environment:
+      APP_URL: http://app:8080
+    depends_on:
+      app:
+        condition: service_healthy
+    command: ["python", "-m", "tests.verify"]
+
+volumes:
+  auth-data:

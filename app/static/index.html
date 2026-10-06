@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>深空地面站 · 终端授权族轮换</title>
+<style>
+  :root { --bg:#0b1020; --panel:#141b33; --line:#26304f; --fg:#e8ecf8;
+          --muted:#93a0c4; --ok:#37d67a; --warn:#ffb340; --bad:#ff5d6c;
+          --accent:#5b8cff; }
+  * { box-sizing:border-box; }
+  body { margin:0; font:14px/1.55 "Segoe UI","PingFang SC","Microsoft YaHei",
+        sans-serif; background:var(--bg); color:var(--fg); }
+  header { padding:18px 24px; border-bottom:1px solid var(--line);
+           display:flex; align-items:center; gap:14px; }
+  header h1 { font-size:17px; margin:0; }
+  #health { margin-left:auto; font-size:13px; color:var(--muted);
+            display:flex; align-items:center; gap:7px; }
+  .dot { width:9px; height:9px; border-radius:50%; background:var(--muted); }
+  .dot.up { background:var(--ok); } .dot.down { background:var(--bad); }
+  main { max-width:980px; margin:22px auto; padding:0 20px;
+         display:grid; gap:18px; }
+  section { background:var(--panel); border:1px solid var(--line);
+            border-radius:12px; padding:18px 20px; }
+  h2 { font-size:15px; margin:0 0 12px; }
+  label { display:block; font-size:12.5px; color:var(--muted);
+          margin:10px 0 4px; }
+  input { width:100%; padding:9px 11px; border-radius:8px;
+          border:1px solid var(--line); background:#0d1326; color:var(--fg);
+          font-family:ui-monospace,Menlo,Consolas,monospace; font-size:13px; }
+  .row { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+  button { margin-top:14px; padding:9px 18px; border:0; border-radius:8px;
+           background:var(--accent); color:#fff; font-size:13.5px;
+           cursor:pointer; }
+  button.secondary { background:#2a355c; }
+  button + button { margin-left:8px; }
+  .card { margin-top:14px; border:1px solid var(--line); border-radius:10px;
+          padding:13px 15px; background:#0d1326;
+          font-family:ui-monospace,Menlo,Consolas,monospace;
+          white-space:pre-wrap; word-break:break-all; font-size:13px; }
+  .badge { display:inline-block; padding:3px 11px; border-radius:999px;
+           font-weight:600; font-size:12.5px; font-family:inherit; }
+  .badge.accepted { background:rgba(55,214,122,.16); color:var(--ok); }
+  .badge.replayed { background:rgba(255,179,64,.16); color:var(--warn); }
+  .badge.revoked  { background:rgba(255,93,108,.16); color:var(--bad); }
+  .badge.created  { background:rgba(91,140,255,.18); color:var(--accent); }
+  .kv { margin:5px 0; } .kv b { color:var(--muted); font-weight:400; }
+  .hint { color:var(--muted); font-size:12.5px; margin-top:8px;
+          font-family:inherit; }
+  .fault { color:var(--warn); }
+</style>
+</head>
+<body>
+<header>
+  <h1>深空地面站 · 终端授权族轮换控制台</h1>
+  <div id="health"><span class="dot" id="health-dot"></span>
+    <span id="health-text">健康检查中…</span></div>
+</header>
+<main>
+  <section>
+    <h2>1 · 创建绑定终端标识的授权族</h2>
+    <div class="row">
+      <div>
+        <label for="f-terminal">终端标识 terminal_id *</label>
+        <input id="f-terminal" data-testid="terminal-id"
+               placeholder="例如 DSN-TERM-07">
+      </div>
+      <div>
+        <label for="f-family">授权族 ID（留空自动生成）</label>
+        <input id="f-family" data-testid="family-id-create"
+               placeholder="fam-xxxxxxxx">
+      </div>
+    </div>
+    <button data-testid="btn-create" onclick="createFamily()">创建授权族</button>
+    <div class="card" id="create-result" data-testid="create-result"
+         style="display:none"></div>
+    <div class="hint">初始刷新凭证为唯一值，仅在创建时展示一次，请立即填入下方轮换表单。</div>
+  </section>
+
+  <section>
+    <h2>2 · 以当前刷新凭证 + 稳定轮换标识发起轮换</h2>
+    <div class="row">
+      <div>
+        <label for="r-family">授权族 ID</label>
+        <input id="r-family" data-testid="family-id">
+      </div>
+      <div>
+        <label for="r-old">当前（旧）刷新凭证 old_credential</label>
+        <input id="r-old" data-testid="old-credential">
+      </div>
+    </div>
+    <label for="r-rot">稳定轮换标识 rotation_id（重传时必须保持不变）</label>
+    <input id="r-rot" data-testid="rotation-id"
+           placeholder="例如 rot-20261006-0001">
+    <button data-testid="btn-rotate" onclick="doRotate(false)">
+      发起轮换 / 重传</button>
+    <button class="secondary" onclick="doRotate(true)">
+      异标识重放（换新 rotation_id，验证撤销）</button>
+    <div id="rotate-badge"></div>
+    <div class="card" id="rotate-result" data-testid="rotate-result"
+         style="display:none"></div>
+    <div class="hint fault" id="fault-hint" style="display:none"
+         data-testid="fault-hint">
+      未收到响应：可能已触发“提交后断回应”故障。轮换可能已经持久化——
+      请保留同一旧凭证与同一轮换标识，待服务重启后原样重传，
+      页面将显示「重放」并取回首次的唯一新凭证，代次不会重复推进。
+    </div>
+  </section>
+
+  <section>
+    <h2>3 · 授权族状态与撤销原因</h2>
+    <label for="s-family">授权族 ID</label>
+    <input id="s-family" data-testid="family-id-status">
+    <button class="secondary" data-testid="btn-status"
+            onclick="refreshStatus()">刷新状态</button>
+    <div class="card" id="status-result" data-testid="status-result"
+         style="display:none"></div>
+  </section>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const outcomeText = {
+  accepted: "接受 · accepted —— 首次轮换成功，新凭证唯一，代次已递增",
+  replayed: "重放 · replayed —— 幂等重传，取回首次结果，代次不再推进",
+  revoked:  "已撤销 · revoked —— 授权族已撤销，全部后继凭证被拒绝"
+};
+
+async function api(path, opts={}) {
+  const resp = await fetch(path, {
+    headers:{"Content-Type":"application/json"}, ...opts});
+  const data = await resp.json().catch(()=>({}));
+  return { ok: resp.ok, status: resp.status, data };
+}
+
+function show(el, html) { el.style.display="block"; el.innerHTML=html; }
+function fillFamily(id) {
+  $("r-family").value = id; $("s-family").value = id;
+}
+
+async function createFamily() {
+  const terminal_id = $("f-terminal").value.trim();
+  if (!terminal_id) { alert("终端标识必填"); return; }
+  const body = { terminal_id };
+  const fam = $("f-family").value.trim();
+  if (fam) body.family_id = fam;
+  const {ok, data} = await api("/api/families",
+    {method:"POST", body:JSON.stringify(body)});
+  const box = $("create-result");
+  if (!ok) { show(box, "创建失败：" + (data.error || "未知错误")); return; }
+  show(box,
+    `<span class="badge created">已创建 · created</span>
+     <div class="kv"><b>授权族：</b>${data.family_id}</div>
+     <div class="kv"><b>终端标识：</b>${data.terminal_id}</div>
+     <div class="kv"><b>初始刷新凭证（仅展示一次）：</b>${data.credential}</div>
+     <div class="kv"><b>代次 generation：</b><span data-testid="generation">${data.generation}</span></div>
+     <div class="kv"><b>仍可用 usable：</b><span data-testid="usable">${data.usable ? "是" : "否"}</span></div>`);
+  $("r-old").value = data.credential;
+  fillFamily(data.family_id);
+}
+
+async function doRotate(differentId) {
+  const family_id = $("r-family").value.trim();
+  const old_credential = $("r-old").value.trim();
+  let rotation_id = $("r-rot").value.trim();
+  if (differentId) rotation_id = "rot-diff-" + Date.now();
+  if (!(family_id && old_credential && rotation_id)) {
+    alert("授权族、旧凭证、轮换标识均必填"); return;
+  }
+  $("fault-hint").style.display = "none";
+  let r;
+  try {
+    r = await api("/api/rotate", {method:"POST",
+      body:JSON.stringify({family_id, old_credential, rotation_id})});
+  } catch (e) {
+    $("fault-hint").style.display = "block";
+    $("rotate-result").style.display = "none";
+    $("rotate-badge").innerHTML = "";
+    return;
+  }
+  const d = r.data;
+  if (d.outcome === "revoked" || r.status === 409) {
+    $("rotate-badge").innerHTML =
+      `<p><span class="badge revoked" data-testid="result-outcome">`
+      + outcomeText.revoked + `</span></p>`;
+    show($("rotate-result"),
+      `<div class="kv"><b>结果 outcome：</b>revoked（请求被拒绝）</div>
+       <div class="kv"><b>授权族撤销原因 revoke_reason：</b>
+         <span data-testid="revoke-reason">${d.revoke_reason ?? "(未知)"}</span></div>
+       <div class="hint">此前发出的后继凭证随后同样会被拒绝，可在下方状态区核验。</div>`);
+    refreshStatus();
+    return;
+  }
+  if (!r.ok) {
+    show($("rotate-result"), "轮换失败：" + (d.error || r.status));
+    return;
+  }
+  $("rotate-badge").innerHTML =
+    `<p><span class="badge ${d.outcome}" data-testid="result-outcome">`
+    + outcomeText[d.outcome] + `</span></p>`;
+  show($("rotate-result"),
+    `<div class="kv"><b>结果 outcome：</b><span data-testid="outcome">${d.outcome}</span>
+       （${d.outcome === "accepted" ? "接受" : "重放"}）</div>
+     <div class="kv"><b>唯一新凭证 new_credential：</b>
+       <span data-testid="new-credential">${d.new_credential}</span></div>
+     <div class="kv"><b>代次 generation：</b>
+       <span data-testid="generation">${d.generation}</span></div>
+     <div class="kv"><b>仍可用 usable：</b>
+       <span data-testid="usable">${d.usable ? "是" : "否"}</span></div>
+     <div class="kv"><b>轮换标识：</b>${d.rotation_id}</div>
+     <div class="hint">重传（含重启后）请保持旧凭证与轮换标识不变，结果与上方完全一致。
+       接受后下一轮请以“新凭证”作为旧凭证。</div>`);
+  if (d.outcome === "accepted") { $("r-old").value = d.new_credential; }
+}
+
+async function refreshStatus() {
+  const id = $("s-family").value.trim();
+  if (!id) return;
+  const {ok, data} = await api("/api/families/" + encodeURIComponent(id));
+  const box = $("status-result");
+  if (!ok) { show(box, "查询失败：" + (data.error || "未知错误")); return; }
+  show(box,
+    `<div class="kv"><b>授权族：</b>${data.family_id}
+       <span class="badge ${data.revoked ? "revoked" : "created"}">`
+     + (data.revoked ? "已撤销 · revoked" : "正常 · active") + `</span></div>
+     <div class="kv"><b>终端标识：</b>${data.terminal_id}</div>
+     <div class="kv"><b>当前代次：</b><span data-testid="status-generation">${data.generation}</span></div>
+     <div class="kv"><b>当前凭证仍可用：</b><span data-testid="status-usable">${data.usable ? "是" : "否"}</span></div>
+     <div class="kv"><b>撤销原因 revoke_reason：</b>
+       <span data-testid="revoke-reason">${data.revoke_reason ?? "—"}</span></div>`);
+}
+
+async function pollHealth() {
+  try {
+    const {ok} = await api("/health");
+    $("health-dot").className = "dot " + (ok ? "up" : "down");
+    $("health-text").textContent = ok ? "服务健康 /health 200" : "服务异常";
+  } catch (e) {
+    $("health-dot").className = "dot down";
+    $("health-text").textContent = "服务不可达";
+  }
+}
+pollHealth(); setInterval(pollHealth, 3000);
+</script>
+</body>
+</html>
